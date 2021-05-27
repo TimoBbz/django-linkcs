@@ -9,7 +9,7 @@ from django.http import HttpResponseForbidden, JsonResponse
 from django.views.generic.base import RedirectView, View
 from django.shortcuts import redirect
 
-from . import LINKCS_API_URL
+from . import AUTH_AUTHORIZE_URL, LINKCS_API_URL
 
 # Login
 
@@ -25,7 +25,7 @@ class LinkCSLogin(RedirectView):
         'scope':settings.LINKCS_SCOPE,
     }
 
-    url = f'{settings.AUTH_HOST}/oauth/authorize/?{urlencode(body)}'.replace('%', r'%%')
+    url = f'{AUTH_AUTHORIZE_URL}?{urlencode(body)}'.replace('%', r'%%')
 
     def get(self, request, *args, **kwargs):
         request.session['state'] = self.state
