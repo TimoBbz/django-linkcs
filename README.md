@@ -81,7 +81,7 @@ Pour personaliser ces paramètres par défaut, il faut créer un moteur héritan
 
 #### Urls fournis
 
-L’application fournit deux jeux d'urls. Les vues correspondantes sont fondées sur des classes donc peuvent être personalisées par héritage.
+L’application fournit deux jeux d'urls. Les vues correspondantes sont fondées sur des classes donc peuvent être personalisées par héritage. Les vues utilisent des templates qui doivent être créés par l'utilisateur dans le dossier _templates/registration_.
 
 ##### `linkcs.urls.both`
 

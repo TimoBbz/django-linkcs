@@ -69,7 +69,7 @@ class PasswordChangeView(UserNotLinkCSMixin, PasswordChangeView):
 
 class LoginChoiceView(TemplateView):
 
-    template_name = 'login_choice.html'
+    template_name = 'registration/login_choice.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
