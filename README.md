@@ -33,11 +33,11 @@ INSTALLED_APPS = [
 ]
 ```
 3. Si vous souhaitez réauthentifier par refresh token les utilisateurs dont l'access token a expiré, ajoutez l'intergiciel `linkcs.middleware.OauthRefreshMiddleware` dans la variable `MIDDLEWARE` du fichier _settings.py_, après l'intergiciel `django.contrib.auth.middleware.AuthenticationMiddleware` :
-```
+```python
 MIDDLEWARE = [
     ...
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'linkcs.middleware.OauthMiddleware',
+    'linkcs.middleware.OauthRefreshMiddleware',
     ...
 ]
 ```
@@ -66,6 +66,13 @@ urlpatterns = [
     ...
 ]
 ```
+
+8. Renseignez les variables dans le fichier _./settings.py_ :
+- `AUTH_REDIRECT_URL` désigne l'url de redirection fourni au serveur OAuth2
+- `LOGIN_URL` désigne l'url de redirection des utilisateurs non connectés. Pointe par défaut sur _/accounts/login/
+- `LOGIN_REDIRECT_URL` désigne l'url de redirection des utilisateurs connectés. Pointe par défaut sur _/accounts/profile/_
+- `LINKCS_LOGIN_REDIRECT_URL` peut être renseigné pour fournir une redirection différente aux utilisateurs qui se connectent via LinkCS. S'il n'est pas renseigné, la valeur de `LOGIN_REDIRECT_URL` sera utilisée.
+
 
 ### Personalisation
 
