@@ -19,12 +19,11 @@ class AbstractLinkcsUser(AbstractUser):
             ("request_linkcs", "Can make a request to LinkCS"),
         ]
 
-    def save(self, **kwargs):
+    def save(self, *args, **kwargs):
         # Si l’utilisateur a un id LinkCS, on désactive la connexion via mot de passe.
         if self.linkcs_id and self.has_usable_password():
             self.set_unusable_password()
-        saved = super(AbstractLinkcsUser, self).save(**kwargs)
+        super().save(*args, **kwargs)
         if self.linkcs_id:
             permission = Permission.objects.get(codename="request_linkcs")
             self.user_permissions.add(permission)
-        return saved

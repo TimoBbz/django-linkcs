@@ -14,7 +14,7 @@ class OauthRefreshMiddleware:
     def __call__(self, request):
         # Code to be executed for each request before
         # the view (and later middleware) are called.
-        
+
         if 'refresh_token' in request.session.keys() and request.session['expires_at'] < datetime.timestamp(datetime.now()):
             auth_request = post(AUTH_TOKEN_URL, headers={
                 'Content-type': 'application/x-www-form-urlencoded'
@@ -48,7 +48,7 @@ class OauthNoRefreshMiddleware:
     def __call__(self, request):
         # Code to be executed for each request before
         # the view (and later middleware) are called.
-        
+
         if request.session['expires_at'] < datetime.timestamp(datetime.now()):
             request.session.clear()
 

@@ -21,8 +21,9 @@ Pour utiliser ce projet, vous devez disposer :
 Cette application utilise l'application `django.contrib.auth`, elle doit donc être installée dans les paramètres du projet.
 
 Pour ajouter cette application à votre projet, suivez les étapes :
-1. Mettez le dossier _./linkcs_ à la racine de votre projet Django (vous pouvez cloner ce projet, puis créer un lien symbolique de l’application à votre projet)
-2. Ajoutez l'application `linkcs` dans la variable `INSTALLED_APPS` du fichier _settings.py_, entre l'application `django.contrib.auth` et les applications qui en dépendent :
+1. Construire l'application linkcs : cloner ce dépôt, lancer la commande `python3 setup.py sdist` et copier l'archive générée hors du dépôt. Le dépôt peut être supprimé.
+2. Installer l'application linkcs : `pip3 install --user chemin/vers/archive`
+3. Ajoutez l'application `linkcs` dans la variable `INSTALLED_APPS` du fichier _settings.py_, entre l'application `django.contrib.auth` et les applications qui en dépendent :
 ```python
 INSTALLED_APPS = [
     ...
@@ -32,7 +33,7 @@ INSTALLED_APPS = [
     ...
 ]
 ```
-3. Si vous souhaitez réauthentifier par refresh token les utilisateurs dont l'access token a expiré, ajoutez l'intergiciel `linkcs.middleware.OauthRefreshMiddleware` dans la variable `MIDDLEWARE` du fichier _settings.py_, après l'intergiciel `django.contrib.auth.middleware.AuthenticationMiddleware` :
+4. Si vous souhaitez réauthentifier par refresh token les utilisateurs dont l'access token a expiré, ajoutez l'intergiciel `linkcs.middleware.OauthRefreshMiddleware` dans la variable `MIDDLEWARE` du fichier _settings.py_, après l'intergiciel `django.contrib.auth.middleware.AuthenticationMiddleware` :
 ```python
 MIDDLEWARE = [
     ...
@@ -42,7 +43,7 @@ MIDDLEWARE = [
 ]
 ```
 Dans le cas contraire, pour détruire les sessions dont l'access token a expiré, utilisez l’intergiciel `linkcs.middleware.OauthNoRefreshMiddleware` à la place.
-4. 3 moteurs d’authentification sont disponible. `linkcs.backends.UserOauthBackend` authentifie les utilisateurs existant en base de données, `linkcs.backends.CreateUserOauthBackend` crée dans la base de donnée les utilisateurs manquants et `linkcs.backends.SessionOnlyOauthBackend` n'utilise pas le modèle User de l'authentification. Ajoutez le moteur d'authentification choisi dans la variable AUTHENTICATION_BACKENDS du fichier _settings.py_. Le moteur d'authentification `django.contrib.auth.backends.ModelBackend` n'est nécessaire que si la connexion par identifiant et mot de passe est nécessaire.
+5. 3 moteurs d’authentification sont disponible. `linkcs.backends.UserOauthBackend` authentifie les utilisateurs existant en base de données, `linkcs.backends.CreateUserOauthBackend` crée dans la base de donnée les utilisateurs manquants et `linkcs.backends.SessionOnlyOauthBackend` n'utilise pas le modèle User de l'authentification. Ajoutez le moteur d'authentification choisi dans la variable AUTHENTICATION_BACKENDS du fichier _settings.py_. Le moteur d'authentification `django.contrib.auth.backends.ModelBackend` n'est nécessaire que si la connexion par identifiant et mot de passe est nécessaire.
 ```python
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend', # optionnel
@@ -50,15 +51,18 @@ AUTHENTICATION_BACKENDS = [
 ]
 ```
 
-5. Définissez dans le fichier _settings.py_ les variables suivantes avec leurs valeurs :
+6. Définissez dans le fichier _settings.py_ les variables suivantes avec leurs valeurs :
 - `CLIENT_ID` : l'id de votre client LinkCS
 - `CLIENT_SECRET` : le secret de votre client LinkCS. **NE GITTEZ PAS CETTE VARIABLE**
 - `LINKCS_SCOPE` : les scopes de votre client, séparés par des espaces dans une chaîne de caractères.
-- `REDIRECT_URL` : l'url de redirection du protocole Oauth2, précisé dans votre client LinkCS.
+- `AUTH_REDIRECT_URL` désigne l'url de redirection fourni au serveur OAuth2
+- `LOGIN_URL` désigne l'url de redirection des utilisateurs non connectés. Pointe par défaut sur _/accounts/login/
+- `LOGIN_REDIRECT_URL` désigne l'url de redirection des utilisateurs connectés. Pointe par défaut sur _/accounts/profile/_
+- `LINKCS_LOGIN_REDIRECT_URL` peut être renseignée pour fournir une redirection différente aux utilisateurs qui se connectent via LinkCS. Si elle n'est pas renseignée, la valeur de `LOGIN_REDIRECT_URL` sera utilisée.
 
-6. Créez un modèle utilisateur, héritant du modèle abstrait `linkcs.models.AbstractLinkcsUser`, et donnez-le à la variable `AUTH_USER_MODEL` du fichier settings.py
+7. Créez un modèle utilisateur, héritant du modèle abstrait `linkcs.models.AbstractLinkcsUser`, et donnez-le à la variable `AUTH_USER_MODEL` du fichier settings.py
 
-7. Deux jeux d'urls fondés sur `django.contrib.auth.urls` sont proposés. `linkcs.urls.both` permet d’utiliser les deux authentifications en parallèle et `linkcs.urls.linkcs` fournit les urls pour utiliser l’authentification LinkCS seulement. Ajoutez les urls au fichier _./urls.py_ de votre projet :
+8. Deux jeux d'urls fondés sur `django.contrib.auth.urls` sont proposés. `linkcs.urls.both` permet d’utiliser les deux authentifications en parallèle et `linkcs.urls.linkcs` fournit les urls pour utiliser l’authentification LinkCS seulement. Ajoutez les urls au fichier _./urls.py_ de votre projet :
 ```python
 urlpatterns = [
     ...
@@ -66,13 +70,6 @@ urlpatterns = [
     ...
 ]
 ```
-
-8. Renseignez les variables dans le fichier _./settings.py_ :
-- `AUTH_REDIRECT_URL` désigne l'url de redirection fourni au serveur OAuth2
-- `LOGIN_URL` désigne l'url de redirection des utilisateurs non connectés. Pointe par défaut sur _/accounts/login/
-- `LOGIN_REDIRECT_URL` désigne l'url de redirection des utilisateurs connectés. Pointe par défaut sur _/accounts/profile/_
-- `LINKCS_LOGIN_REDIRECT_URL` peut être renseigné pour fournir une redirection différente aux utilisateurs qui se connectent via LinkCS. S'il n'est pas renseigné, la valeur de `LOGIN_REDIRECT_URL` sera utilisée.
-
 
 ### Personalisation
 
@@ -85,6 +82,8 @@ Le moteur d'authentification `linkcs.backends.CreateUserOauthBackend` crée des 
 - `'email'` : L'email principal sur LinkCS.
 
 Pour personaliser ces paramètres par défaut, il faut créer un moteur héritant de la vue `linkcs.backend.CreateUserOauthBackend` et écraser la fonction `get_defaults(self, request, user_request)`, où `user_request` désigne le résultat de la requête à _https://auth.viarezo.fr/api/user/show/me_, sous forme de dictionnaire.
+
+Le moteur d'authentification `linkcs.backends.SessionOnlyOauthBackend` authentifie les utilisateurs et enregistre les informations de `user_request` dans la session.
 
 #### Urls fournis
 
@@ -137,8 +136,8 @@ Pour contribuer au développement de cette application, vous pouvez cloner ce d�
 
 ### Fonctionnalités à ajouter
 
+- Faire une pipeline qui publie les packages
 - Choix des méthodes d'authentification
-- Rendre l'installation de l'application plus "classique", comme un module par exemple
 - Configurer l'interface d'administration pour l'application
 - Rendre la contribution plus "classique"
 - Écrire des tests

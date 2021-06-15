@@ -1,20 +1,20 @@
 from random import choice
-from requests import get
 from string import ascii_letters
 from urllib.parse import urlencode
+from requests import get
 
 from django.conf import settings
-from django.contrib.auth import authenticate, get_user_model, login, views
-from django.contrib.auth.views import LoginView, PasswordChangeView
+from django.contrib.auth import authenticate, get_user_model, login
 from django.contrib.auth.mixins import PermissionRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.contrib.sessions.exceptions import InvalidSessionKey
-from django.http import HttpResponseForbidden, HttpResponseRedirect, JsonResponse
+from django.http import JsonResponse
 from django.views.generic.base import RedirectView, View, TemplateView
-from django.shortcuts import redirect, resolve_url
+from django.shortcuts import resolve_url
 from django.urls import reverse
-from django.utils.http import url_has_allowed_host_and_scheme
 
-from . import AUTH_AUTHORIZE_URL, AUTH_USER_URL, LINKCS_API_URL
+from . import AUTH_AUTHORIZE_URL, LINKCS_API_URL
 
 UserModel = get_user_model()
 
@@ -44,7 +44,7 @@ class LinkCSLogin(RedirectView, LoginView):
 
     def get_success_url(self):
         url = LoginView.get_redirect_url(self)
-        return url or resolve_url(settings.LOGIN_LINKCS_REDIRECT_URL or settings.LOGIN_REDIRECT_URL)
+        return url or resolve_url(settings.LOGIN_LINKCS_REDIRECT_URL if hasattr(settings, 'LOGIN_LINKCS_REDIRECT_URL') else settings.LOGIN_REDIRECT_URL)
 
 
 class LinkCSRedirect(RedirectView):
@@ -52,7 +52,8 @@ class LinkCSRedirect(RedirectView):
     def get_redirect_url(self, *args, **kwargs):
         user = authenticate(self.request, code=self.request.GET.get('code'), state=self.request.GET.get('state'))
         if user is not None:
-            login(self.request, user)
+            if not isinstance(user, AnonymousUser):
+                login(self.request, user)
             return self.request.session.pop('next')
 
         return reverse('login')
@@ -96,7 +97,7 @@ class GraphQLMixin(PermissionRequiredMixin):
     def get_query(self):
         assert self.query is not None, (
             f"{self.__class__.__name__} should either include a `query`"
-            "attribute, or overwrite the `get_query()` method."  
+            "attribute, or overwrite the `get_query()` method."
         )
 
         return self.query
@@ -104,7 +105,7 @@ class GraphQLMixin(PermissionRequiredMixin):
     def get_variables(self):
         assert self.variables is not None, (
             f"{self.__class__.__name__} should either include a `variables`"
-            "attribute, or overwrite the `get_variables()` method."  
+            "attribute, or overwrite the `get_variables()` method."
         )
 
         return self.variables
