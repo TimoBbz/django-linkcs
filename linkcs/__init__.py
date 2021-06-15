@@ -1,8 +1,3 @@
-from requests import get, post
-
-from django.conf import settings
-
-
 AUTH_HOST = 'https://auth.viarezo.fr'
 AUTH_AUTHORIZE_URL = f'{AUTH_HOST}/oauth/authorize/'
 AUTH_TOKEN_URL = f'{AUTH_HOST}/oauth/token'

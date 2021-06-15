@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, Permission
 
 # Create your models here.
 
@@ -15,9 +15,16 @@ class AbstractLinkcsUser(AbstractUser):
 
     class Meta(AbstractUser.Meta):
         abstract = True
+        permissions = [
+            ("request_linkcs", "Can make a request to LinkCS"),
+        ]
 
     def save(self, **kwargs):
         # Si l’utilisateur a un id LinkCS, on désactive la connexion via mot de passe.
-        if self.linkcs_id:
+        if self.linkcs_id and self.has_usable_password():
             self.set_unusable_password()
-        return super(AbstractLinkcsUser, self).save(**kwargs)
+        saved = super(AbstractLinkcsUser, self).save(**kwargs)
+        if self.linkcs_id:
+            permission = Permission.objects.get(codename="request_linkcs")
+            self.user_permissions.add(permission)
+        return saved
