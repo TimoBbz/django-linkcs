@@ -13,7 +13,7 @@ test-application:
 build-application:
   stage: build
   script:
-    - python setup.py sdist
+    - python setup.py sdist bdist_wheel
   only:
     - tags
 
