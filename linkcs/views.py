@@ -76,9 +76,8 @@ class LoginChoiceView(TemplateView):
         context = super().get_context_data(**kwargs)
         body = self.request.GET.urlencode(safe='/')
         body_string = f'?{body}' if body else ''
-        if body:
-            context['login_linkcs_url'] = reverse('login_linkcs') + body_string
-            context['login_credentials_url'] = reverse('login_credentials') + body_string
+        context['login_linkcs_url'] = reverse('login_linkcs') + body_string
+        context['login_credentials_url'] = reverse('login_credentials') + body_string
         return context
 
 
