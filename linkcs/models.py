@@ -20,7 +20,8 @@ class AbstractLinkcsUser(AbstractUser):
         ]
 
     def save(self, *args, **kwargs):
-        # Si l’utilisateur a un id LinkCS, on désactive la connexion via mot de passe.
+        # Si l’utilisateur a un id LinkCS, on désactive la connexion
+        # via mot de passe.
         if self.linkcs_id and self.has_usable_password():
             self.set_unusable_password()
         super().save(*args, **kwargs)

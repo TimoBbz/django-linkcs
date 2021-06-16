@@ -1,50 +1,10 @@
-from requests import get, post
-
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend, ModelBackend
 from django.contrib.auth.models import AnonymousUser
-from django.contrib.sessions.exceptions import InvalidSessionKey
 
-from . import AUTH_TOKEN_URL, AUTH_USER_URL
+from . import authenticate_server, get_linkcs_user
 
 UserModel = get_user_model()
-
-
-def authenticate_server(request, **credentials):
-    if not 'code' in credentials or not 'state' in credentials:
-        return False
-
-    if not 'state' in request.session.keys():
-        return False
-
-    if request.session['state'] != credentials['state']:
-        return False
-
-    auth_request = post(AUTH_TOKEN_URL, headers={
-        'Content-type': 'application/x-www-form-urlencoded'
-    }, data={
-        'grant_type': 'authorization_code',
-        'code': credentials['code'],
-        'redirect_uri': settings.AUTH_REDIRECT_URL,
-        'client_id': settings.CLIENT_ID,
-        'client_secret': settings.CLIENT_SECRET,
-    })
-
-    deserialized = auth_request.json()
-    request.session['access_token'] = deserialized['access_token']
-    request.session['expires_at'] = deserialized['expires_at']
-    request.session['refresh_token'] = deserialized['refresh_token']
-    return True
-
-
-def get_linkcs_user(request):
-    if not 'access_token' in request.session.keys():
-        raise InvalidSessionKey
-    auth_request = get(AUTH_USER_URL, headers = {
-        'Authorization': f"Bearer {request.session['access_token']}"
-    })
-    return auth_request.json()
 
 
 class SessionOnlyOauthBackend(BaseBackend):
@@ -95,5 +55,4 @@ class CreateUserOauthBackend(ModelBackend):
 
         return UserModel.objects.get_or_create(
             linkcs_id=user_request['id'],
-            defaults=self.get_defaults(request, user_request)
-        )
+            defaults=self.get_defaults(request, user_request))

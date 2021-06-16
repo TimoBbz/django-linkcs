@@ -15,7 +15,9 @@ class OauthRefreshMiddleware:
         # Code to be executed for each request before
         # the view (and later middleware) are called.
 
-        if 'refresh_token' in request.session.keys() and request.session['expires_at'] < datetime.timestamp(datetime.now()):
+        now_timestamp = datetime.timestamp(datetime.now())
+        if ('refresh_token' in request.session.keys() and
+                request.session['expires_at'] < now_timestamp):
             auth_request = post(AUTH_TOKEN_URL, headers={
                 'Content-type': 'application/x-www-form-urlencoded'
             }, data={

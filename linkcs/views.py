@@ -5,7 +5,8 @@ from requests import get
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login
-from django.contrib.auth.mixins import PermissionRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.mixins import (
+    PermissionRequiredMixin, UserPassesTestMixin)
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.contrib.sessions.exceptions import InvalidSessionKey
@@ -19,10 +20,6 @@ from . import AUTH_AUTHORIZE_URL, LINKCS_API_URL
 UserModel = get_user_model()
 
 
-
-# Auth
-
-
 class LinkCSLogin(RedirectView, LoginView):
     # Uses LoginView to put the redirect url into session
     state = ''.join(choice(ascii_letters) for _ in range(10))
@@ -33,7 +30,6 @@ class LinkCSLogin(RedirectView, LoginView):
         'state': state,
         'scope': settings.LINKCS_SCOPE,
     }
-
     url = f'{AUTH_AUTHORIZE_URL}?{urlencode(body)}'.replace('%', r'%%')
 
     def get(self, request, *args, **kwargs):
@@ -44,13 +40,19 @@ class LinkCSLogin(RedirectView, LoginView):
 
     def get_success_url(self):
         url = LoginView.get_redirect_url(self)
-        return url or resolve_url(settings.LOGIN_LINKCS_REDIRECT_URL if hasattr(settings, 'LOGIN_LINKCS_REDIRECT_URL') else settings.LOGIN_REDIRECT_URL)
+        if hasattr(settings, 'LOGIN_LINKCS_REDIRECT_URL'):
+            settings_url = settings.LOGIN_LINKCS_REDIRECT_URL
+        else:
+            settings_url = settings.LOGIN_REDIRECT_URL
+        return url or resolve_url(settings_url)
 
 
 class LinkCSRedirect(RedirectView):
 
     def get_redirect_url(self, *args, **kwargs):
-        user = authenticate(self.request, code=self.request.GET.get('code'), state=self.request.GET.get('state'))
+        user = authenticate(
+            self.request, code=self.request.GET.get('code'),
+            state=self.request.GET.get('state'))
         if user is not None:
             if not isinstance(user, AnonymousUser):
                 login(self.request, user)
@@ -60,8 +62,12 @@ class LinkCSRedirect(RedirectView):
 
 
 class UserNotLinkCSMixin(UserPassesTestMixin):
+
     def test_func(self):
-        return not self.request.user.has_perm(f'{UserModel._meta.label}.request_linkcs')
+        perm_name = f'{UserModel._meta.label}.request_linkcs'
+        return (
+            not self.request.user.has_perm(perm_name)
+            or self.request.user.is_superuser)
 
 
 class PasswordChangeView(UserNotLinkCSMixin, PasswordChangeView):
@@ -69,26 +75,21 @@ class PasswordChangeView(UserNotLinkCSMixin, PasswordChangeView):
 
 
 class LoginChoiceView(TemplateView):
-
     template_name = 'registration/login_choice.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         body = self.request.GET.urlencode(safe='/')
         body_string = f'?{body}' if body else ''
-        context['login_linkcs_url'] = reverse('login_linkcs') + body_string
-        context['login_credentials_url'] = reverse('login_credentials') + body_string
+        context.update({
+            'login_linkcs_url': reverse('login_linkcs') + body_string,
+            'login_credentials_url': reverse('login_credentials') + body_string
+        })
         return context
 
 
-
-# Fetch LinkCS:
-
-
 class GraphQLMixin(PermissionRequiredMixin):
-
     permission_required = f'{UserModel._meta.app_label}.request_linkcs'
-
     query = r'{}'
     variables = r'{}'
     base_url = LINKCS_API_URL
@@ -98,7 +99,6 @@ class GraphQLMixin(PermissionRequiredMixin):
             f"{self.__class__.__name__} should either include a `query`"
             "attribute, or overwrite the `get_query()` method."
         )
-
         return self.query
 
     def get_variables(self):
@@ -106,21 +106,20 @@ class GraphQLMixin(PermissionRequiredMixin):
             f"{self.__class__.__name__} should either include a `variables`"
             "attribute, or overwrite the `get_variables()` method."
         )
-
         return self.variables
 
     def get_graphql(self, cached=True):
-        if 'access_token' not in self.request.session.keys() or 'expires_at' not in self.request.session.keys():
+        if 'access_token' not in self.request.session.keys():
             raise InvalidSessionKey
 
         if not hasattr(self, 'graphql_result') or not cached:
             graphql_request = get(self.base_url, headers={
-                'Authorization': f"Bearer {self.request.session['access_token']}"
+                'Authorization':
+                    f"Bearer {self.request.session['access_token']}"
             }, params={
                 'query': self.get_query(),
                 'variables': self.get_variables()
             })
-
             self.graphql_result = graphql_request.json()
         return self.graphql_result
 
