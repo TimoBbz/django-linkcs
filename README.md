@@ -4,7 +4,7 @@
 
 Le but de cette application est de fournir l'auth ViaRézo à votre site et de simplifier les requêtes à LinkCS. Pour ce faire sont fournis :
 - Trois moteurs d'authentification à l'auth ViaRézo
-- Deux intergiciel pour réauthentifier les utilisateurs via le _refresh token_ ou détruire leur session
+- Deux intergiciels, pour réauthentifier les utilisateurs via le _refresh token_ ou détruire leur session
 - Un modèle abstrait ajoutant l'id linkcs aux utilisateurs, ainsi qu'une permission _'request_linkcs'_.
 - Des vues héritables permettant de faire des requêtes à LinkCS.
 
@@ -21,8 +21,7 @@ Pour utiliser ce projet, vous devez disposer :
 Cette application utilise l'application `django.contrib.auth`, elle doit donc être installée dans les paramètres du projet.
 
 Pour ajouter cette application à votre projet, suivez les étapes :
-1. Construire l'application linkcs : cloner ce dépôt, lancer la commande `python3 setup.py sdist` et copier l'archive générée hors du dépôt. Le dépôt peut être supprimé.
-2. Installer l'application linkcs : `pip3 install --user chemin/vers/archive`
+1. Installez l'application depuis le dépôt de paquets du projet : `pip install django-linkcs --extra-index-url https://__token__:SczUqFz7ZLQoVbPXqDZP@gitlab.viarezo.fr/api/v4/projects/2612/packages/pypi/simple`
 3. Ajoutez l'application `linkcs` dans la variable `INSTALLED_APPS` du fichier _settings.py_, entre l'application `django.contrib.auth` et les applications qui en dépendent :
 ```python
 INSTALLED_APPS = [
@@ -75,13 +74,15 @@ urlpatterns = [
 
 #### Moteurs d'authentification
 
+Les moteurs d'authentification utilisent la bibliothèque `requests`, qui lève des erreurs en cas de soucis lors de la connexion au serveur. Celles-ci sont gérées dans la vue `LinkCSRedirect`, voir plus bas.
+
 Le moteur d'authentification `linkcs.backends.CreateUserOauthBackend` crée des utilisateurs avec les paramètres par défaut suivants :
 - `'username'` : Le login LinkCS,
 - `'first_name'` : Le prénom sur LinkCS,
 - `'last_name'` : Le nom de famille sur LinkCS,
 - `'email'` : L'email principal sur LinkCS.
 
-Pour personaliser ces paramètres par défaut, il faut créer un moteur héritant de la vue `linkcs.backend.CreateUserOauthBackend` et écraser la fonction `get_defaults(self, request, user_request)`, où `user_request` désigne le résultat de la requête à _https://auth.viarezo.fr/api/user/show/me_, sous forme de dictionnaire.
+Pour personaliser ces paramètres par défaut, il faut créer un moteur héritant de la vue `linkcs.backend.CreateUserOauthBackend` et surcharger la fonction `get_defaults(self, request, user_request)`, où `user_request` désigne le résultat de la requête à _https://auth.viarezo.fr/api/user/show/me_, sous forme de dictionnaire.
 
 Le moteur d'authentification `linkcs.backends.SessionOnlyOauthBackend` authentifie les utilisateurs et enregistre les informations de `user_request` dans la session.
 
@@ -112,6 +113,8 @@ La plupart des vues utilisées sont les vues de `django.contrib.auth.views`, mis
 - L’url nommée `login_credentials` utilise la vue `django.contrib.auth.views.LoginView`.
 - PasswordChangeView (utilisée dans l’URL nommée `password_change`) est fondée sur la vue `django.contrib.auth.views.PasswordChangeView`, mais vérifie avant que l’utilisateur n’est pas connecté via LinkCS à l'aide de la permission _'request_linkcs'_.
 
+__Attention : la déconnection détruit la session mais ne déconnecte pas de l'oauth.__
+
 ##### `linkcs.urls.linkcs`
 
 Ce jeu fournit les modèles d'urls suivants :
@@ -124,20 +127,34 @@ Les vues utilisées sont respectivement les vues LinkCSRedirect, LinkCSLogin et 
 
 #### Requêtes à LinkCS
 
-Pour faire une requête LinkCS, il faut créer une vue qui hérite de la vue `linkcs.views.GraphQLView` ou du mixin `linkcs.views.GraphQLMixin`, et renseigner la variable `query` ou écraser la fonction `get_query(self, request)` (cela permet d'utiliser par exemple des paramètres passés dans la requête). Pour passer des variables à la requête GraphQL, les variables sont renseignées via la variable `variables` ou la fonction `get_variables(self, request)`.
-Pour accéder au résultat de la requête, il faut utiliser la fonction `get_graphql(self, cached=True)`. Par défaut le résultat est caché, ce comportement peut être changé passant `cached=False` lors de l’appel de la fonction.
+Pour faire une requête LinkCS, il faut créer une vue qui hérite de la vue `linkcs.views.GraphQLView` ou du mixin `linkcs.views.GraphQLMixin`, et renseigner la variable `query` ou surcharger la fonction `get_query(self, request)` (cela permet d'utiliser par exemple des paramètres passés dans la requête). Pour passer des variables à la requête GraphQL, les variables sont renseignées via la variable `variables` ou la fonction `get_variables(self, request)`.
+Pour accéder au résultat de la requête, il faut utiliser la fonction `get_result(self)`. Par défaut le résultat est caché via le décorateur @cached_property, ce comportement peut être changé modifiant la fonction `get_result(self)`.
 L'access token de l'utilisateur est utilisé pour cette requête. Dans le cas où la vue est utilisée plutôt que le mixin, la réponse est un objet `django.http.JsonResponse`.
+
+#### Gestion des erreurs
+
+Lors de la connexion au serveur, certaines erreurs de connexion peuvent se produire. Par défaut le comportement suivant est adopté :
+- Dans la vue `LinkCSRedirect` et le mixin `GraphQLMixin`, une erreur 502 (BAD GATEWAY), 503 (SERVICE_UNAVAILABLE) ou 504 (GATEWAY TIMEOUT) peut être renvoyée.
+- Dans l'intergiciel `OauthRefreshMiddleware`, l'utilisateur est déconnecté en cas d'erreur.
+Ce comportement peut être personnalisé. Les objets implémentent ces comportements dans des méthodes intitulées respectivement `handle_bad_gateway`, `handle_bad_request` et `handle_gateway_timeout` (`handle_bad_request` gère les requêtes erronnées de la part du site client, qui renvoit donc par défaut une erreur 503 à son propre client). Ces méthodes renvoient un objet réponse. dans le cas des vues, les méthodes prennent en argument la réponse initiale donnée par dispatch.
+Enfin, pour implémenter la gestion des erreurs dans des vues customisées, le mixin `HandleGatewayErrorMixin` peut être utilisé. (Le placer après les Mixin de contrôle d'accès.)
+
+On notera que le serveur n'est jamais censé renvoyer une erreur HTTP 400 lors de la récupération de tokens puisque les requêtes concernées sont immuables.
 
 ## Développement
 
 ### Contribuer
 
-Pour contribuer au développement de cette application, vous pouvez cloner ce dépôt, créer un projet Django, et inclure l'application linkcs au projet avec un lien symbolique. Vous configurez ensuite le client comme décrit précédemment.
+Pour contribuer au développement de cette application, vous pouvez cloner ce dépôt, créer un projet Django, et inclure l'application linkcs au projet avec un lien symbolique (cela permet de recharger automatiquement l'application à chaque modification, sans la reconstruire). Vous configurez ensuite le client comme décrit précédemment.
+
+### Stratégie git
+
+Le dépôt est configuré pour publier un paquet à chaque tag de version (qui doit correspondre à l'étiquette de version). Il est fortement conseillé d'utiliser la commande ```git tag v`python3 setup.py --version` ``` afin de se rendre compte des erreurs de version lors de l'étiquetage plutôt qu'après avoir poussé l'étiquette
+
+Jusqu'à la version 1, on itère les version v0.x, puis ensuite on suit le versionnage sémantique (version majeure, version mineure et patch). Si un patch est nécessaire, créez la branche _v8.6.x_ (ou tout autre version majeure et mineure), et travaillez dessus.
 
 ### Fonctionnalités à ajouter
 
-- Faire une pipeline qui publie les packages
 - Choix des méthodes d'authentification
 - Configurer l'interface d'administration pour l'application
-- Rendre la contribution plus "classique"
 - Écrire des tests

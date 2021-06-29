@@ -1,7 +1,7 @@
 from random import choice
 from string import ascii_letters
 from urllib.parse import urlencode
-from requests import get
+from requests import get, ConnectionError, HTTPError, Timeout, TooManyRedirects
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login
@@ -14,10 +14,37 @@ from django.http import JsonResponse
 from django.views.generic.base import RedirectView, View, TemplateView
 from django.shortcuts import resolve_url
 from django.urls import reverse
+from django.utils.functional import cached_property
 
-from . import AUTH_AUTHORIZE_URL, LINKCS_API_URL
+from . import (
+    AUTH_AUTHORIZE_URL, LINKCS_API_URL, HttpResponseBadGateway,
+    HttpResponseGatewayTimeout, HttpResponseServiceUnavailable, logger,
+    server_request_wrapper, ServerError)
 
 UserModel = get_user_model()
+
+
+class HandleGatewayErrorMixin:
+
+    def handle_bad_gateway(self, request, response):
+        return HttpResponseBadGateway()
+
+    def handle_gateway_timeout(self, request, response):
+        return HttpResponseGatewayTimeout()
+
+    def handle_bad_request(self, request, response):
+        return HttpResponseServiceUnavailable()
+
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            response = super().dispatch(request, *args, **kwargs)
+        except (ConnectionError, ServerError, TooManyRedirects):
+            return self.handle_bad_gateway(response)
+        except Timeout:
+            return self.handle_gateway_timeout(response)
+        except HTTPError:
+            return self.handle_bad_request(response)
+        return response
 
 
 class LinkCSLogin(RedirectView, LoginView):
@@ -33,7 +60,6 @@ class LinkCSLogin(RedirectView, LoginView):
     url = f'{AUTH_AUTHORIZE_URL}?{urlencode(body)}'.replace('%', r'%%')
 
     def get(self, request, *args, **kwargs):
-        print(request.GET)
         request.session['state'] = self.state
         request.session['next'] = self.get_success_url() or ''
         return super().get(self, request, *args, **kwargs)
@@ -47,7 +73,7 @@ class LinkCSLogin(RedirectView, LoginView):
         return url or resolve_url(settings_url)
 
 
-class LinkCSRedirect(RedirectView):
+class LinkCSRedirect(HandleGatewayErrorMixin, RedirectView):
 
     def get_redirect_url(self, *args, **kwargs):
         user = authenticate(
@@ -59,6 +85,11 @@ class LinkCSRedirect(RedirectView):
             return self.request.session.pop('next')
 
         return reverse('login')
+
+    def handle_bad_request(self, request, response):
+        logger.error('Oauth request raised an HTTP error code, this is not '
+            'supposed to happen.')
+        return super().handle_bad_request(request, response)
 
 
 class UserNotLinkCSMixin(UserPassesTestMixin):
@@ -88,7 +119,7 @@ class LoginChoiceView(TemplateView):
         return context
 
 
-class GraphQLMixin(PermissionRequiredMixin):
+class GraphQLMixin(PermissionRequiredMixin, HandleGatewayErrorMixin):
     permission_required = f'{UserModel._meta.app_label}.request_linkcs'
     query = r'{}'
     variables = r'{}'
@@ -108,23 +139,27 @@ class GraphQLMixin(PermissionRequiredMixin):
         )
         return self.variables
 
-    def get_graphql(self, cached=True):
+    # Method to override instead of `result()`. To prevent caching,
+    # use `del self.result`. If this method is not overriden,
+    # `self.result` can be used.
+    def get_result(self):
+        return self.result
+
+    @cached_property
+    def result(self):
         if 'access_token' not in self.request.session.keys():
             raise InvalidSessionKey
-
-        if not hasattr(self, 'graphql_result') or not cached:
-            graphql_request = get(self.base_url, headers={
-                'Authorization':
-                    f"Bearer {self.request.session['access_token']}"
-            }, params={
-                'query': self.get_query(),
-                'variables': self.get_variables()
-            })
-            self.graphql_result = graphql_request.json()
-        return self.graphql_result
+        graphql_request = server_request_wrapper(get, self.base_url, headers={
+            'Authorization':
+                f"Bearer {self.request.session['access_token']}"
+        }, params={
+            'query': self.get_query(),
+            'variables': self.get_variables()
+        })
+        return graphql_request.json()
 
 
 class GraphQLView(GraphQLMixin, View):
 
     def get(self, request, *args, **kwargs):
-        return JsonResponse(self.get_graphql())
+        return JsonResponse(self.get_result())
