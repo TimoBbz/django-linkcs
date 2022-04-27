@@ -27,7 +27,7 @@ projet.
 Pour ajouter cette application à votre projet, suivez les étapes :
 
 1. Installez l'application depuis le dépôt de paquets du
-   projet : `pip install django-linkcs --extra-index-url https://__token__:SczUqFz7ZLQoVbPXqDZP@gitlab.viarezo.fr/api/v4/projects/2612/packages/pypi/simple`
+   projet : `pip install django-linkcs --extra-index-url https://__token__:personnalA7c6MCRy6PEsswbT-zbw@gitlab.viarezo.fr/api/v4/projects/2612/packages/pypi/simple`
 
 2. Ajoutez l'application `linkcs` dans la variable `INSTALLED_APPS` du fichier _settings.py_, entre
    l'application `django.contrib.auth` et les applications qui en dépendent :
