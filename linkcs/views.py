@@ -1,15 +1,16 @@
+from datetime import datetime
 from random import choice
 from string import ascii_letters
 from urllib.parse import urlencode
-from requests import get, ConnectionError, HTTPError, Timeout, TooManyRedirects
+from requests import get, RequestException
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login
-from django.contrib.auth.mixins import (
-    PermissionRequiredMixin, UserPassesTestMixin)
+from django.contrib.auth.mixins import UserPassesTestMixin
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.contrib.sessions.exceptions import InvalidSessionKey
+from django.core.exceptions import ImproperlyConfigured
 from django.http import JsonResponse
 from django.views.generic.base import RedirectView, View, TemplateView
 from django.shortcuts import resolve_url
@@ -17,34 +18,12 @@ from django.urls import reverse
 from django.utils.functional import cached_property
 
 from . import (
-    AUTH_AUTHORIZE_URL, LINKCS_API_URL, HttpResponseBadGateway,
-    HttpResponseGatewayTimeout, HttpResponseServiceUnavailable, logger,
-    server_request_wrapper, ServerError)
+    AUTH_AUTHORIZE_URL, LINKCS_API_URL, HttpResponseServiceUnavailable, logger, server_request_wrapper,
+    get_profile_model, HandleGatewayErrorMixin)
 
 UserModel = get_user_model()
-
-
-class HandleGatewayErrorMixin:
-
-    def handle_bad_gateway(self, request, response):
-        return HttpResponseBadGateway()
-
-    def handle_gateway_timeout(self, request, response):
-        return HttpResponseGatewayTimeout()
-
-    def handle_bad_request(self, request, response):
-        return HttpResponseServiceUnavailable()
-
-    def dispatch(self, request, *args, **kwargs):
-        try:
-            response = super().dispatch(request, *args, **kwargs)
-        except (ConnectionError, ServerError, TooManyRedirects):
-            return self.handle_bad_gateway(response)
-        except Timeout:
-            return self.handle_gateway_timeout(response)
-        except HTTPError:
-            return self.handle_bad_request(response)
-        return response
+if has_profile := hasattr(settings, "AUTH_PROFILE_USER"):
+    ProfileModel = get_profile_model()
 
 
 class LinkCSLogin(RedirectView, LoginView):
@@ -86,19 +65,35 @@ class LinkCSRedirect(HandleGatewayErrorMixin, RedirectView):
 
         return reverse('login')
 
-    def handle_bad_request(self, request, response):
-        logger.error('Oauth request raised an HTTP error code, this is not '
-            'supposed to happen.')
-        return super().handle_bad_request(request, response)
+    def handle_bad_request(self, request, **kwargs):
+        logger.error('Oauth request raised an HTTP error code, this is not supposed to happen.')
+        return HttpResponseServiceUnavailable()
+
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            return super().dispatch(request, *args, **kwargs)
+        except RequestException as e:
+            self.handle_gateway_error(e, request, *args, **kwargs)
 
 
-class UserNotLinkCSMixin(UserPassesTestMixin):
+class UserLinkCSMixin(UserPassesTestMixin):
 
     def test_func(self):
+        if hasattr(self, 'request'):
+            request = self.request
+        else:
+            raise ImproperlyConfigured("This Mixin should be used with a View class.")
         perm_name = f'{UserModel._meta.label}.request_linkcs'
-        return (
-            not self.request.user.has_perm(perm_name)
-            or self.request.user.is_superuser)
+        return ((request.user.has_perm(perm_name) and not request.user.is_superuser)
+                or hasattr(request.user, 'profile')
+                or request.user.username
+                or 'linkcs' in request.session.keys())
+
+
+class UserNotLinkCSMixin(UserLinkCSMixin):
+
+    def test_func(self):
+        return not super().test_func()
 
 
 class PasswordChangeView(UserNotLinkCSMixin, PasswordChangeView):
@@ -119,11 +114,16 @@ class LoginChoiceView(TemplateView):
         return context
 
 
-class GraphQLMixin(PermissionRequiredMixin, HandleGatewayErrorMixin):
-    permission_required = f'{UserModel._meta.app_label}.request_linkcs'
+class GraphQLMixin(UserLinkCSMixin, HandleGatewayErrorMixin):
     query = r'{}'
     variables = r'{}'
     base_url = LINKCS_API_URL
+
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            return super().dispatch(request, *args, **kwargs)
+        except RequestException as e:
+            self.handle_gateway_error(e, request, **kwargs)
 
     def get_query(self):
         assert self.query is not None, (
@@ -140,18 +140,27 @@ class GraphQLMixin(PermissionRequiredMixin, HandleGatewayErrorMixin):
         return self.variables
 
     # Method to override instead of `result()`. To prevent caching,
-    # use `del self.result`. If this method is not overriden,
+    # use `del self.result`. If this method is not overridden,
     # `self.result` can be used.
     def get_result(self):
         return self.result
 
     @cached_property
     def result(self):
-        if 'access_token' not in self.request.session.keys():
+        if hasattr(self, 'request'):
+            request = self.request
+        else:
+            raise ImproperlyConfigured("This Mixin should be used with a View class.")
+        if 'access_token' not in request.session.keys():
             raise InvalidSessionKey
+        else:
+            now_timestamp = datetime.timestamp(datetime.now())
+            if request.session['expires_at'] < now_timestamp:
+                raise ImproperlyConfigured('Access token refreshing should be '
+                                           + 'handled by a middleware')
         graphql_request = server_request_wrapper(get, self.base_url, headers={
             'Authorization':
-                f"Bearer {self.request.session['access_token']}"
+                f"Bearer {request.session['access_token']}"
         }, params={
             'query': self.get_query(),
             'variables': self.get_variables()
