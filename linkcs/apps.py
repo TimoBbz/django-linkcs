@@ -1,5 +1,5 @@
 from django.apps import AppConfig
 
 
-class LinkcsConfig(AppConfig):
+class LinkCSConfig(AppConfig):
     name = 'linkcs'

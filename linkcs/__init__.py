@@ -90,7 +90,7 @@ def get_profile_model():
     Return the Profile model that is active in this project.
     """
     if not hasattr(settings, 'AUTH_PROFILE_MODEL'):
-        raise ImproperlyConfigured("The variable AUTH_PROFILE_MODEL must be set in the settings")
+        return None
     try:
         return django_apps.get_model(settings.AUTH_PROFILE_MODEL, require_ready=False)
     except ValueError:

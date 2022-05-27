@@ -55,7 +55,7 @@ MIDDLEWARE = [
 ]
 ```
 
-Dans le cas contraire, pour détruire les sessions dont l'access token a expiré, utilisez
+Dans le cas contraire, pour détruire les sessions dont l’access token a expiré, utilisez
 l’intergiciel `linkcs.middleware.OauthNoRefreshMiddleware` à la place.
 
 4. 3 moteurs d’authentification sont disponible. `linkcs.backends.UserOauthBackend` authentifie les utilisateurs
@@ -73,32 +73,25 @@ AUTHENTICATION_BACKENDS = [
 ]
 ```
 
-5. Définissez votre modèle utilisateur. Plusieurs solutions sont possibles :
+5. Définissez votre modèle utilisateur. L’application fournit un profil ajoutant le champ linkcs_id au modèle 
+utilisateur. Il est automatiquement utilisé lorsque l’application LinkCS est utilisée.
 
-- Utiliser le modèle `linkcs.models.LinkCSUser`
-- Créer un modèle héritant du modèle abstrait `linkcs.models.AbstractLinkCSUser`
-- Utiliser un modèle profil en plus du modèle utilisateur. Ce cas est adapté lorsque le modèle utilisateur existant ne
-  peut pas être modifié. Il faut alors créer un modèle qui hérite de `linkcs.models.LinkCSProfile` et diriger la
-  variable `AUTH_PROFILE_MODEL` dessus en syntaxe pointée (par exemple `website.Profile`).
-
-Dans tous les cas, si le   modèle utilisateur n’est pas celui par défaut, il faut définir la variable `AUTH_USER_MODEL`
-dessus en syntaxe pointée.
 
 6. Définissez dans le fichier _settings.py_ les variables suivantes avec leurs valeurs :
 
 - `CLIENT_ID` : l'id de votre client LinkCS
 - `CLIENT_SECRET` : le secret de votre client LinkCS. **NE GITTEZ PAS CETTE VARIABLE**
 - `LINKCS_SCOPE` : les scopes de votre client, séparés par des espaces dans une chaîne de caractères.
-- `AUTH_REDIRECT_URL` désigne l'url de redirection fourni au serveur OAuth2
-- `LOGIN_URL` (facultative) désigne l'url de redirection des utilisateurs non connectés. Pointe par défaut sur _
-  /accounts/login/_
-- `LOGIN_REDIRECT_URL` (facultative) désigne l'url de redirection des utilisateurs connectés. Pointe par défaut sur _
-  /accounts/profile/_
+- `AUTH_REDIRECT_URL` désigne l’url de redirection fournie au serveur OAuth2
+- `LOGIN_URL` (facultative) désigne l’url de redirection des utilisateurs non connectés. Pointe par défaut sur
+  _/accounts/login/_
+- `LOGIN_REDIRECT_URL` (facultative) désigne l’url de redirection des utilisateurs connectés. Pointe par défaut sur
+  _/accounts/profile/_
 - `LINKCS_LOGIN_REDIRECT_URL` (facultative) peut être renseignée pour fournir une redirection différente aux
   utilisateurs qui se connectent via LinkCS. Si elle n'est pas renseignée, la valeur de `LOGIN_REDIRECT_URL` sera
   utilisée.
 
-7. Deux jeux d'urls fondés sur `django.contrib.auth.urls` sont proposés. `linkcs.urls.both` permet d’utiliser les deux
+7. Deux jeux d’urls fondés sur `django.contrib.auth.urls` sont proposés. `linkcs.urls.both` permet d’utiliser les deux
    authentifications en parallèle et `linkcs.urls.linkcs` fournit les urls pour utiliser l’authentification LinkCS
    seulement. Ajoutez les urls au fichier _./urls.py_ de votre projet :
 
@@ -123,6 +116,7 @@ voir plus bas.
 Le moteur d'authentification `linkcs.backends.CreateUserOauthBackend` crée des utilisateurs avec les paramètres par
 défaut suivants :
 
+- `'linkcs_id'` : L’ID LinkCS,
 - `'username'` : Le login LinkCS,
 - `'first_name'` : Le prénom sur LinkCS,
 - `'last_name'` : Le nom de famille sur LinkCS,
@@ -150,7 +144,7 @@ Ce jeu fournit les modèles d'urls suivants :
 accounts/auth/ [name='oauth_redirect_uri']
 accounts/login/ [name='login']
 accounts/login/linkcs [name='login_linkcs']
-accounts/login/credentials [name='login_credentials']
+accounts/login/failed [name='login_failed']
 accounts/logout/ [name='logout']
 accounts/password_change/ [name='password_change']
 accounts/password_change/done/ [name='password_change_done']
@@ -171,12 +165,14 @@ La plupart des vues utilisées sont les vues de `django.contrib.auth.views`, mis
   auxquels on a ajouté le corps de la requête GET vers l’url nommé `login`.
 - LinkCSLogin (utilisée dans l'URL nommée `login_linkcs`) redirige vers le serveur OAuth2 tout en passant la
   variable `next` en session pour une redirection future.
+- L'URL nommée `login_failed` est utilisée en cas d'échec de l'authentification via LinkCSLogin. Ici, elle redirige
+  simplement vers `login`. Elle est utile pour le modèle d'URL 
 - L’url nommée `login_credentials` utilise la vue `django.contrib.auth.views.LoginView`.
 - PasswordChangeView (utilisée dans l’URL nommée `password_change`) est fondée sur la
   vue `django.contrib.auth.views.PasswordChangeView`, mais vérifie avant que l’utilisateur n’est pas connecté via
   LinkCS.
 
-__Attention : la déconnection détruit la session mais ne déconnecte pas de l'oauth.__
+__Attention : la déconnexion détruit la session, mais ne déconnecte pas de l'oauth.__
 
 ##### `linkcs.urls.linkcs`
 
@@ -185,17 +181,22 @@ Ce jeu fournit les modèles d'urls suivants :
 ```python
 accounts/auth/ [name='oauth_redirect_uri']
 accounts/login/ [name='login']
+accounts/login/failed [name='login_failed']
 accounts/logout/ [name='logout']
 ```
 
-Les vues utilisées sont respectivement les vues LinkCSRedirect, LinkCSLogin et `django.contrib.auth.views.LogoutView`.
+Les vues utilisées sont respectivement les vues LinkCSRedirect, LinkCSLogin et `django.contrib.auth.views.LogoutView`,
+ainsi que la vue LoginFailedView, qui affiche une erreur 403 Unauthorized. Cette vue est nécessaire pour éviter les
+rebonds infinis. En effet, l'URL nommé `login` renvoie vers l'oauth, qui redirige vers `oauth_redirect_uri`, qui en
+cas d'échec redirige vers `login_failed`. Si `login_failed` redirigeait vers `login`, on aurait une boucle infinie en
+cas d’échec, donc le module prend le parti d'afficher une erreur 403. Ce comportement peut être modifié, en 
+surchargeant l'URL nommé `login_failed`.
 
 #### Gestion des permissions sur les vues
 
 Deux mixins de restriction d'accès sont fournis pour gérer l'accès aux vues:
 
-- `linkcs.views.UserLinkCSMixin` permet de s’assurer que l'utilisateur peut se connecter à LinkCS (y compris dans les
-  cas où l'id est dans le modèle profil)
+- `linkcs.views.UserLinkCSMixin` permet de s’assurer que l'utilisateur peut se connecter à LinkCS.
 - `linkcs.views.UserNotLinkCSMixin` autorise les cas contraires.
 
 #### Requêtes à LinkCS
@@ -247,8 +248,6 @@ mineure), et travaillez dessus.
 
 ### Fonctionnalités à ajouter
 
-- Retravailler les modèles fournis afin de fournir une configuration plus réutilisable (
-  Voir https://docs.djangoproject.com/fr/3.2/topics/auth/customizing/#referencing-the-user-model).
 - Choix des méthodes oauth de récupération du token (actuellement, les méthodes "authorization_code" et "refresh_token"
   sont nécessaires)
 - Configurer l'interface d'administration pour l'application (ajout d’utilisateur de type LinkCS ou non, avec une

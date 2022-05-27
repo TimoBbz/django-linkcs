@@ -5,8 +5,8 @@ from urllib.parse import urlencode
 from requests import get, RequestException
 
 from django.conf import settings
-from django.contrib.auth import authenticate, get_user_model, login
-from django.contrib.auth.mixins import UserPassesTestMixin
+from django.contrib.auth import authenticate, login
+from django.contrib.auth.mixins import UserPassesTestMixin, LoginRequiredMixin
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.contrib.sessions.exceptions import InvalidSessionKey
@@ -20,10 +20,9 @@ from django.utils.functional import cached_property
 from . import (
     AUTH_AUTHORIZE_URL, LINKCS_API_URL, HttpResponseServiceUnavailable, logger, server_request_wrapper,
     get_profile_model, HandleGatewayErrorMixin)
+from .models import LinkCSProfile
 
-UserModel = get_user_model()
-if has_profile := hasattr(settings, "AUTH_PROFILE_USER"):
-    ProfileModel = get_profile_model()
+ProfileModel = get_profile_model() or LinkCSProfile
 
 
 class LinkCSLogin(RedirectView, LoginView):
@@ -63,7 +62,7 @@ class LinkCSRedirect(HandleGatewayErrorMixin, RedirectView):
                 login(self.request, user)
             return self.request.session.pop('next')
 
-        return reverse('login')
+        return reverse('login_failed')
 
     def handle_bad_request(self, request, **kwargs):
         logger.error('Oauth request raised an HTTP error code, this is not supposed to happen.')
@@ -76,6 +75,11 @@ class LinkCSRedirect(HandleGatewayErrorMixin, RedirectView):
             self.handle_gateway_error(e, request, *args, **kwargs)
 
 
+class LoginFailedView(LoginRequiredMixin, TemplateView):
+    raise_exception = True
+    template_name = "registration/login_failed.html"
+
+
 class UserLinkCSMixin(UserPassesTestMixin):
 
     def test_func(self):
@@ -83,11 +87,7 @@ class UserLinkCSMixin(UserPassesTestMixin):
             request = self.request
         else:
             raise ImproperlyConfigured("This Mixin should be used with a View class.")
-        perm_name = f'{UserModel._meta.label}.request_linkcs'
-        return ((request.user.has_perm(perm_name) and not request.user.is_superuser)
-                or hasattr(request.user, 'profile')
-                or request.user.username
-                or 'linkcs' in request.session.keys())
+        return hasattr(request.user, ProfileModel._meta.model_name) or 'linkcs' in request.session.keys()
 
 
 class UserNotLinkCSMixin(UserLinkCSMixin):
@@ -96,12 +96,11 @@ class UserNotLinkCSMixin(UserLinkCSMixin):
         return not super().test_func()
 
 
-class PasswordChangeView(UserNotLinkCSMixin, PasswordChangeView):
+class UpdatedPasswordChangeView(UserNotLinkCSMixin, PasswordChangeView):
     pass
 
 
-class LoginChoiceView(TemplateView):
-    template_name = 'registration/login_choice.html'
+class UpdatedLoginView(LoginView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -109,7 +108,6 @@ class LoginChoiceView(TemplateView):
         body_string = f'?{body}' if body else ''
         context.update({
             'login_linkcs_url': reverse('login_linkcs') + body_string,
-            'login_credentials_url': reverse('login_credentials') + body_string
         })
         return context
 

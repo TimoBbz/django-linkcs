@@ -1,14 +1,10 @@
-from django.conf import settings
-from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend, ModelBackend
 from django.contrib.auth.models import AnonymousUser
 
 from . import authenticate_server, get_linkcs_user, get_profile_model, logger
+from .models import LinkCSProfile
 
-UserModel = get_user_model()
-
-if has_profile := hasattr(settings, "AUTH_PROFILE_MODEL"):
-    ProfileModel = get_profile_model()
+ProfileModel = get_profile_model() or LinkCSProfile
 
 
 # Exceptions handlers
@@ -63,17 +59,9 @@ class UserOauthBackend(LogExceptionMixin, ModelBackend):
             self.handle_exception(e)
             return None
 
-        if has_profile:
-            try:
-                return ProfileModel.objects.get(linkcs_id=user_request['id']).user
-            except ProfileModel.DoesNotExist:
-                return None
-            except Exception as e:
-                self.handle_exception(e)
-
         try:
-            return UserModel.objects.get(linkcs_id=user_request['id'])
-        except UserModel.DoesNotExist:
+            return ProfileModel.objects.get(linkcs_id=user_request['id'])
+        except ProfileModel.DoesNotExist:
             return None
         except Exception as e:
             self.handle_exception(e)
@@ -83,17 +71,18 @@ class CreateUserOauthBackend(CrashOnExceptionMixin, ModelBackend):
 
     def get_matching_user(self, request, user_request):
         username = user_request['login']
-        if len(matching_users := UserModel.objects.filter(username__startswith=username)) > 0:
+        if len(matching_users := ProfileModel.objects.filter(username__startswith=username)) > 0:
             i = 1
             while len(matching_users.filter(username=username + str(i))) > 0:
                 i += 1
             defaults = self.get_defaults(request, user_request)
             defaults['username'] = username + str(i)
-            return UserModel(**defaults)
-        return UserModel(**self.get_defaults(request, user_request))
+            return ProfileModel(**defaults)
+        return ProfileModel(**self.get_defaults(request, user_request))
 
     def get_defaults(self, request, user_request):
         return {
+            'linkcs_id': user_request['id'],
             'username': user_request['login'],
             'first_name': user_request['firstName'],
             'last_name': user_request['lastName'],
@@ -110,27 +99,13 @@ class CreateUserOauthBackend(CrashOnExceptionMixin, ModelBackend):
             self.handle_exception(e)
             return None
 
-        if has_profile:
-            if len(profile_set := ProfileModel.objects.filter(linkcs_id=user_request['id'])) > 0:
-                return profile_set.get().user
-            else:
-                try:
-                    new_user = self.get_matching_user(request, user_request)
-                    new_user.save()
-                except Exception as e:
-                    self.handle_exception(e)
-                    return None
-
-                profile = ProfileModel(
-                    linkcs_id=user_request['id'],
-                    user=new_user)
-                profile.save()
-                return new_user
-
+        if len(profile_set := ProfileModel.objects.filter(linkcs_id=user_request['id'])) > 0:
+            return profile_set.get()
         else:
             try:
-                return UserModel.objects.get_or_create(
-                    linkcs_id=user_request['id'],
-                    defaults=self.get_defaults(request, user_request))[0]
+                new_user = self.get_matching_user(request, user_request)
+                new_user.save()
+                return new_user
             except Exception as e:
                 self.handle_exception(e)
+                return None

@@ -19,7 +19,7 @@ class OauthRefreshMiddleware:
 
     def handle_bad_request(self, request):
         logger.error('Oauth request raised an HTTP error code, this is not '
-            'supposed to happen.')
+                     'supposed to happen.')
         logout(request)
         return self.get_response(request)
 
@@ -35,16 +35,18 @@ class OauthRefreshMiddleware:
         if ('refresh_token' in request.session.keys() and
                 request.session['expires_at'] < now_timestamp):
             try:
-                auth_request = server_request_wrapper(post, AUTH_TOKEN_URL,
-                headers={
-                    'Content-type': 'application/x-www-form-urlencoded'
-                }, data={
-                    'grant_type': 'refresh_token',
-                    'refresh_token': request.session['refresh_token'],
-                    'redirect_uri': settings.AUTH_REDIRECT_URL,
-                    'client_id': settings.CLIENT_ID,
-                    'client_secret': settings.CLIENT_SECRET,
-                })
+                auth_request = server_request_wrapper(
+                    post,
+                    AUTH_TOKEN_URL,
+                    headers={
+                        'Content-type': 'application/x-www-form-urlencoded'
+                    }, data={
+                        'grant_type': 'refresh_token',
+                        'refresh_token': request.session['refresh_token'],
+                        'redirect_uri': settings.AUTH_REDIRECT_URL,
+                        'client_id': settings.CLIENT_ID,
+                        'client_secret': settings.CLIENT_SECRET,
+                    })
             except (ConnectionError, ServerError):
                 return self.handle_bad_gateway(request)
             except HTTPError:
